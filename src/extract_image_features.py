@@ -15,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 # ── Config ───────────────────────────────────────────────────────────────────
-METADATA_PATH = "data/metadata.csv"
+METADATA_PATH = "data/metadata_balanced.csv"
 IMAGES_ROOT   = "data/images"          # extracted tar.gz lives here
 FEATURES_DIR  = "features"
 BATCH_SIZE    = 64

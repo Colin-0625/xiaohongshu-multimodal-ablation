@@ -21,7 +21,7 @@ from sklearn.metrics import accuracy_score, f1_score
 FEATURES_DIR  = "features"
 SPLITS_DIR    = "data/splits"
 RESULTS_DIR   = "results"
-METADATA_PATH = "data/metadata.csv"
+METADATA_PATH = "data/metadata_balanced.csv"
 EPOCHS        = 50
 BATCH_SIZE    = 64
 LR            = 1e-3
