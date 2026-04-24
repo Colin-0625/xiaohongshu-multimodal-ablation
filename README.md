@@ -34,7 +34,7 @@ Under what content category and text length conditions does adding image informa
 - **Split:** 80% train / 10% val / 10% test (stratified, random_state=42)
 - **Images:** Extracted from `part_113` to `part_116` (~12 GB raw → 42 MB after extraction)
 
-> ⚠️ Images are stored locally and not included in this repository.  
+> ⚠️ Images are stored locally and **not included** in this repository.  
 > See [Image Setup](#image-setup) below for instructions.
 
 ---
@@ -44,27 +44,32 @@ Under what content category and text length conditions does adding image informa
 ```
 xiaohongshu-multimodal-ablation/
 ├── data/
-│   ├── metadata_balanced.csv      # 714 samples with labels
+│   ├── metadata_balanced.csv      # 714 samples with labels (main dataset)
+│   ├── metadata.csv               # Original unbalanced metadata
 │   └── splits/
-│       ├── train.csv              # 570 samples
-│       ├── val.csv                # 72 samples
-│       └── test.csv               # 72 samples
+│       ├── train.csv              # 570 samples (190 per class)
+│       ├── val.csv                # 72 samples (24 per class)
+│       └── test.csv               # 72 samples (24 per class)
+├── notebooks/
+│   ├── MDL_run.ipynb              # ★ End-to-end experiment notebook (main)
+│   └── 01_data_pipeline.ipynb    # Data construction and exploration
+├── results/
+│   └── error_cases.csv            # Misclassified test samples (late fusion)
 ├── src/
+│   ├── balance_dataset.py         # Balance dataset to 238 samples per class
 │   ├── split_metadata.py          # Generate train/val/test splits
-│   ├── extract_text_features.py   # RoBERTa → 768-dim features
-│   ├── extract_image_features.py  # ResNet50 → 2048-dim features
+│   ├── extract_needed_images.py   # Extract required images from raw archives
+│   ├── extract_text_features.py   # RoBERTa → 768-dim text features
+│   ├── extract_image_features.py  # ResNet50 → 2048-dim image features
 │   ├── train_text_only.py         # Train text-only MLP
 │   ├── train_image_only.py        # Train image-only MLP
 │   ├── train_late_fusion.py       # Train late fusion model
 │   ├── train_gated_fusion.py      # Train gated fusion model
 │   └── evaluate.py                # Full evaluation + all figures
-├── results/
-│   ├── error_cases.csv            # Misclassified test samples
-│   └── figures/                   # All generated plots
-├── notebooks/
-│   └── MDL_run.ipynb              # End-to-end Colab notebook
-├── requirements.txt
-└── README.md
+├── .gitignore
+├── LICENSE
+├── README.md
+└── requirements.txt
 ```
 
 ---
@@ -96,7 +101,7 @@ scipy
 ```
 
 > This project was developed and run on **Google Colab with NVIDIA T4 GPU**.  
-> Local CPU execution is supported but significantly slower for feature extraction.
+> Local CPU execution is supported but significantly slower (~12 min vs ~2 min for feature extraction).
 
 ---
 
@@ -125,9 +130,7 @@ D:/qilin_raw/
 └── part_116/
 ```
 
-### Step 3: Extract only the needed images
-
-Run the extraction script to copy only the 714 required images into the project:
+### Step 3: Extract only the 714 required images
 
 ```bash
 python src/extract_needed_images.py \
@@ -136,15 +139,7 @@ python src/extract_needed_images.py \
     --meta   /path/to/project/data/metadata_balanced.csv
 ```
 
-After this step, the structure should be:
-
-```
-data/images/
-├── part_113/
-├── part_114/
-├── part_115/
-└── part_116/
-```
+After this step, `data/images/` will contain only the 714 needed images (~42 MB).
 
 ---
 
@@ -152,21 +147,34 @@ data/images/
 
 ### Option A: Google Colab (Recommended)
 
-1. Open `notebooks/MDL_run.ipynb` in Google Colab
-2. Set runtime to **T4 GPU** (Runtime → Change runtime type → T4 GPU)
-3. Run all cells in order
+1. Clone this repository in Colab:
 
-The notebook handles cloning, dependency installation, feature extraction, training, and evaluation end-to-end.
+```python
+!git clone https://github.com/Colin-0625/xiaohongshu-multimodal-ablation.git
+%cd xiaohongshu-multimodal-ablation
+!pip install -r requirements.txt -q
+```
+
+2. Upload `images.zip` and extract:
+
+```python
+from google.colab import files
+uploaded = files.upload()  # upload images.zip
+!unzip -q data/images.zip -d data/
+!mkdir -p features results results/figures
+```
+
+3. Open and run **`notebooks/MDL_run.ipynb`** — run all cells in order.
+
+> Set runtime to **T4 GPU**: Runtime → Change runtime type → T4 GPU
 
 ### Option B: Run scripts manually
 
-Follow this exact order:
-
 ```bash
-# 1. Generate data splits (run locally, output already in repo)
+# 1. Split dataset (already done — splits/ is in repo)
 python src/split_metadata.py
 
-# 2. Extract features (requires GPU for reasonable speed)
+# 2. Extract features
 python src/extract_text_features.py    # ~5 min on T4
 python src/extract_image_features.py   # ~2 min on T4
 
@@ -175,8 +183,9 @@ python - << 'EOF'
 import numpy as np
 labels = np.load('features/text_labels.npy', allow_pickle=True)
 label2idx = {'fashion_beauty': 0, 'food_travel': 1, 'knowledge_tutorial': 2}
-np.save('features/text_labels.npy', np.array([label2idx[l] for l in labels], dtype='int64'))
-np.save('features/image_labels.npy', np.load('features/text_labels.npy'))
+labels_int = np.array([label2idx[l] for l in labels], dtype='int64')
+np.save('features/text_labels.npy', labels_int)
+np.save('features/image_labels.npy', labels_int)
 EOF
 
 # 4. Train all models
@@ -189,15 +198,17 @@ python src/train_gated_fusion.py
 python src/evaluate.py
 ```
 
-**Expected outputs:**
+### Expected outputs after full run
 
 | File | Description |
 |------|-------------|
 | `features/text_features.npy` | (714, 768) RoBERTa embeddings |
 | `features/image_features.npy` | (714, 2048) ResNet50 features |
 | `results/text_only_best.pt` | Best text-only checkpoint |
+| `results/image_only_best.pt` | Best image-only checkpoint |
 | `results/late_fusion_best.pt` | Best late fusion checkpoint |
-| `results/gate_weights_test.npy` | Gated fusion gate weights on test set |
+| `results/gated_fusion_best.pt` | Best gated fusion checkpoint |
+| `results/gate_weights_test.npy` | Gate weights on test set |
 | `results/error_cases.csv` | Misclassified samples |
 | `results/figures/` | 8 analysis figures |
 
@@ -212,7 +223,7 @@ python src/evaluate.py
 | `03_confusion_matrices.png` | 2×2 confusion matrix grid |
 | `04_category_gain.png` | Per-category F1 gain (Late Fusion vs Text-only) |
 | `05_text_length_gain.png` | F1 gain by text length bucket |
-| `06_gate_weights.png` | Average gate weight per category |
+| `06_gate_weights.png` | Average gate weight per category (Gated Fusion) |
 | `07_error_analysis.png` | Error rate by text length + error count by class |
 | `08_gradcam_errors.png` | GradCAM visualization of misclassified samples |
 
@@ -223,18 +234,16 @@ python src/evaluate.py
 | Component | Choice |
 |-----------|--------|
 | Text encoder | `hfl/chinese-roberta-wwm-ext` (frozen) |
-| Image encoder | ResNet50 / ResNet18 pretrained (frozen) |
+| Image encoder | ResNet50 / ResNet18 pretrained on ImageNet (frozen) |
 | Classifier | Small MLP (2–3 layers) |
-| Training env | Google Colab (T4 GPU) |
+| Training env | Google Colab (NVIDIA T4 GPU) |
 | Framework | PyTorch + HuggingFace Transformers |
-| Evaluation | scikit-learn, scipy (t-test) |
+| Evaluation | scikit-learn, scipy (paired t-test) |
 | Visualization | matplotlib, seaborn, grad-cam |
 
 ---
 
-## Citation
-
-If you use the Qilin dataset, please cite:
+## Dataset Citation
 
 ```
 THUIR. (2023). Qilin Dataset.
